@@ -16,9 +16,7 @@ class MailClient:
             'accept': 'application/json',
         }
 
-        if self.username:
-            pass
-        else:
+        if not self.username:
             self.response = requests.put(
                 'https://www.developermail.com/api/v1/mailbox', headers=headers)
             self.response = self.response.json()

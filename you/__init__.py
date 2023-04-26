@@ -5,20 +5,7 @@ from uuid       import uuid4
 
 
 class Completion:
-    def create(
-        prompt          : str,
-        page            : int  = 1,
-        count           : int  = 10,
-        safeSearch      : str  = "Moderate",
-        onShoppingpage  : bool = False,
-        mkt             : str  = "",
-        responseFilter  : str  = "WebPages,Translations,TimeZone,Computation,RelatedSearches",
-        domain          : str  = "youchat",
-        queryTraceId    : str  = None,
-        chat            : list = [],
-        includelinks    : bool = False,
-        detailed        : bool = False,
-        debug           : bool = False ) -> dict:
+    def create(self, page            : int  = 1, count           : int  = 10, safeSearch      : str  = "Moderate", onShoppingpage  : bool = False, mkt             : str  = "", responseFilter  : str  = "WebPages,Translations,TimeZone,Computation,RelatedSearches", domain          : str  = "youchat", queryTraceId    : str  = None, chat            : list = [], includelinks    : bool = False, detailed        : bool = False, debug           : bool = False) -> dict:
         
         client         = Session(client_identifier="chrome_108")
         client.headers = {
@@ -37,21 +24,25 @@ class Completion:
             "user-agent"        : "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36",
         }
 
-        response = client.get(f"https://you.com/api/streamingSearch", params = {
-                "q"              : prompt,
-                "page"           : page,
-                "count"          : count,
-                "safeSearch"     : safeSearch,
-                "onShoppingPage" : onShoppingpage,
-                "mkt"            : mkt,
-                "responseFilter" : responseFilter,
-                "domain"         : domain,
-                "queryTraceId"   : str(uuid4()) if queryTraceId is None else queryTraceId,
-                "chat"           : str(chat),  # {"question":"","answer":" '"}
-            }
+        response = client.get(
+            "https://you.com/api/streamingSearch",
+            params={
+                "q": self,
+                "page": page,
+                "count": count,
+                "safeSearch": safeSearch,
+                "onShoppingPage": onShoppingpage,
+                "mkt": mkt,
+                "responseFilter": responseFilter,
+                "domain": domain,
+                "queryTraceId": str(uuid4())
+                if queryTraceId is None
+                else queryTraceId,
+                "chat": str(chat),
+            },
         )
-        
-        
+            
+
         if debug:
             print('\n\n------------------\n\n')
             print(response.text)
@@ -60,11 +51,11 @@ class Completion:
         youChatSerpResults      = findall(r'youChatSerpResults\ndata: (.*)\n\nevent', response.text)[0]
         thirdPartySearchResults = findall(r"thirdPartySearchResults\ndata: (.*)\n\nevent", response.text)[0]
         #slots                   = findall(r"slots\ndata: (.*)\n\nevent", response.text)[0]
-        
+
         text = response.text.split('}]}\n\nevent: youChatToken\ndata: {"youChatToken": "')[-1]
         text = text.replace('"}\n\nevent: youChatToken\ndata: {"youChatToken": "', '')
         text = text.replace('event: done\ndata: I\'m Mr. Meeseeks. Look at me.\n\n', '')
-        
+
         extra = {
             'youChatSerpResults'      : loads(youChatSerpResults),
             #'slots'                   : loads(slots)

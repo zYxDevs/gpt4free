@@ -12,11 +12,11 @@ from twocaptcha import TwoCaptcha
 solver = TwoCaptcha('72747bf24a9d89b4dcc1b24875efd358')
 
 class Account:
-    def create(proxy: None or str = None, logging: bool = False, enable_bot_creation: bool = False):
+    def create(self, logging: bool = False, enable_bot_creation: bool = False):
         client       =  TLS(client_identifier='chrome110')
-        client.proxies = {
-            'http': f'http://{proxy}',
-            'https': f'http://{proxy}'} if proxy else None
+        client.proxies = (
+            {'http': f'http://{self}', 'https': f'http://{self}'} if self else None
+        )
 
         mail_client  = Emailnator()
         mail_address  = mail_client.get_mail()
@@ -65,20 +65,20 @@ class Account:
 
         base_string = payload + client.headers["poe-formkey"] + 'WpuLMiXEKKE98j56k'
         client.headers["poe-tag-id"] =  md5(base_string.encode()).hexdigest()
-        
+
         print(dumps(client.headers, indent=4))
-        
+
         response = client.post('https://poe.com/api/gql_POST', data=payload)
-        
+
         if 'automated_request_detected' in response.text:
             print('please try using a proxy / wait for fix')
-        
+
         if 'Bad Request' in response.text:
             if logging: print('bad request, retrying...' , response.json())
             quit()
 
         if logging: print('send_code' ,response.json())
-        
+
         mail_content = mail_client.get_message()
         mail_token   = findall(r';">(\d{6,7})</div>', mail_content)[0]
 

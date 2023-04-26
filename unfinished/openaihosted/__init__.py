@@ -34,5 +34,7 @@ response = requests.get(url, headers=headers, stream=True)
 for message in response.iter_content(chunk_size=1024):
     message = message.decode('utf-8')
     msg_match, num_match = re.search(r'"msg":"(.*?)"', message), re.search(r'\[DONE\] (\d+)', message)
-    if msg_match: print(msg_match.group(1))
-    if num_match: print(num_match.group(1))
+    if msg_match:
+        print(msg_match[1])
+    if num_match:
+        print(num_match[1])

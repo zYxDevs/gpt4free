@@ -23,16 +23,13 @@ def get_token():
 
 
 class AsyncCompletion:
-    async def create(
-        prompt     : str = 'hello world',
-        optionSets : list = [
+    async def create(self, optionSets : list = [
             'deepleo', 
             'enable_debug_commands', 
             'disable_emoji_spoken_text', 
             'enablemm', 
             'h3relaxedimg'
-        ],
-        token     : str = get_token()):
+        ], token     : str = get_token()):
         
         create = get('https://edgeservices.bing.com/edgesvc/turing/conversation/create', 
             headers = {
@@ -80,48 +77,46 @@ class AsyncCompletion:
         struct = {
             'arguments': [
                 {
-                    'source': 'cib', 
-                    'optionsSets': optionSets, 
-                    'isStartOfSession': True, 
+                    'source': 'cib',
+                    'optionsSets': optionSets,
+                    'isStartOfSession': True,
                     'message': {
-                        'author': 'user', 
-                        'inputMethod': 'Keyboard', 
-                        'text': prompt, 
-                        'messageType': 'Chat'
-                    }, 
-                    'conversationSignature': conversationSignature, 
-                    'participant': {
-                        'id': clientId
-                    }, 
-                    'conversationId': conversationId
+                        'author': 'user',
+                        'inputMethod': 'Keyboard',
+                        'text': self,
+                        'messageType': 'Chat',
+                    },
+                    'conversationSignature': conversationSignature,
+                    'participant': {'id': clientId},
+                    'conversationId': conversationId,
                 }
-            ], 
-            'invocationId': '0', 
-            'target': 'chat', 
-            'type': 4
+            ],
+            'invocationId': '0',
+            'target': 'chat',
+            'type': 4,
         }
-        
+
         await wss.send(format(struct))
-        
+
         base_string = ''
-        
+
         final = False
         while not final:
             objects = str(await wss.recv()).split('\x1e')
             for obj in objects:
                 if obj is None or obj == '':
                     continue
-                
+
                 response = loads(obj)
                 if response.get('type') == 1 and response['arguments'][0].get('messages',):
                     response_text = response['arguments'][0]['messages'][0]['adaptiveCards'][0]['body'][0].get('text')
-                    
+
                     yield (response_text.replace(base_string, ''))
                     base_string = response_text
-        
+
                 elif response.get('type') == 2:
                     final = True
-        
+
         await wss.close()
 
 async def run():

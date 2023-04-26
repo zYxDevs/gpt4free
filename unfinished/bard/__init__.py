@@ -49,16 +49,11 @@ class Completion:
     #     self.choice_id       = ''
     #     self.reqid           = randint(1111, 9999)
     
-    def create(
-        prompt          : str = 'hello world',
-        temperature     : int = None,
-        conversation_id : str = '',
-        response_id     : str = '',
-        choice_id       : str = '') -> BardResponse:
+    def create(self, temperature     : int = None, conversation_id : str = '', response_id     : str = '', choice_id       : str = '') -> BardResponse:
         
         if temperature:
-            prompt = f'''settings: follow these settings for your response: [temperature: {temperature} - {temperatures[temperature]}] | prompt  : {prompt}'''
-        
+            self = f'''settings: follow these settings for your response: [temperature: {temperature} - {temperatures[temperature]}] | prompt  : {self}'''
+
         client         = Session()
         client.proxies = {
             'http': f'http://{proxy}',
@@ -75,27 +70,36 @@ class Completion:
         }
 
         snlm0e          = search(r'SNlM0e\":\"(.*?)\"', client.get('https://bard.google.com/').text).group(1)
-    
+
         params = urlencode({
             'bl'     : 'boq_assistant-bard-web-server_20230326.21_p0',
             '_reqid' : randint(1111, 9999),
             'rt'     : 'c',
         })
 
-        response = client.post(f'https://bard.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?{params}', 
-            data = {
+        response = client.post(
+            f'https://bard.google.com/_/BardChatUi/data/assistant.lamda.BardFrontendService/StreamGenerate?{params}',
+            data={
                 'at': snlm0e,
-                'f.req': dumps([None, dumps([
-                        [prompt],
+                'f.req': dumps(
+                    [
                         None,
-                        [conversation_id, response_id, choice_id],
-                    ])
-                ])
-            }
+                        dumps(
+                            [
+                                [self],
+                                None,
+                                [conversation_id, response_id, choice_id],
+                            ]
+                        ),
+                    ]
+                ),
+            },
         )
-        
+
         chat_data = loads(response.content.splitlines()[3])[0][2]
-        if not chat_data: print('error, retrying'); Completion.create(prompt, temperature, conversation_id, response_id, choice_id)
+        if not chat_data:
+            print('error, retrying')
+            Completion.create(self, temperature, conversation_id, response_id, choice_id)
 
         json_chat_data = loads(chat_data)
         results = {
@@ -106,7 +110,7 @@ class Completion:
             'textQuery'         : json_chat_data[2][0] if json_chat_data[2] is not None else '',
             'choices'           : [{'id': i[0], 'content': i[1]} for i in json_chat_data[4]],
         }
-        
+
         # self.conversation_id = results['conversation_id']
         # self.response_id     = results['response_id']
         # self.choice_id       = results['choices'][0]['id']

@@ -46,9 +46,7 @@ def extract_formkey(html):
     for pair in cipher_pairs:
         formkey_index, key_index = map(int, pair)
         formkey_list[formkey_index] = key_text[key_index]
-    formkey = "".join(formkey_list)
-
-    return formkey
+    return "".join(formkey_list)
 
 
 class PoeResponse:
@@ -100,13 +98,7 @@ class ModelResponse:
 
 
 class Model:
-    def create(
-        token: str,
-        model: str = "gpt-3.5-turbo",  # claude-instant
-        system_prompt: str = "You are ChatGPT a large language model developed by Openai. Answer as consisely as possible",
-        description: str = "gpt-3.5 language model from openai, skidded by poe.com",
-        handle: str = None,
-    ) -> ModelResponse:
+    def create(self, model: str = "gpt-3.5-turbo", system_prompt: str = "You are ChatGPT a large language model developed by Openai. Answer as consisely as possible", description: str = "gpt-3.5 language model from openai, skidded by poe.com", handle: str = None) -> ModelResponse:
         models = {
             "gpt-3.5-turbo": "chinchilla",
             "claude-instant-v1.0": "a2",
@@ -117,7 +109,7 @@ class Model:
             handle = f"gptx{randint(1111111, 9999999)}"
 
         client = Session()
-        client.cookies["p-b"] = token
+        client.cookies["p-b"] = self
 
         formkey = extract_formkey(client.get("https://poe.com").text)
         settings = client.get("https://poe.com/api/settings").json()
@@ -185,14 +177,10 @@ class Model:
 
 
 class Account:
-    def create(
-        proxy: Optional[str] = None,
-        logging: bool = False,
-        enable_bot_creation: bool = False,
-    ):
+    def create(self, logging: bool = False, enable_bot_creation: bool = False):
         client = TLS(client_identifier="chrome110")
         client.proxies = (
-            {"http": f"http://{proxy}", "https": f"http://{proxy}"} if proxy else None
+            {"http": f"http://{self}", "https": f"http://{self}"} if self else None
         )
 
         mail_client = Emailnator()
@@ -299,13 +287,8 @@ class Account:
 
 
 class StreamingCompletion:
-    def create(
-        model: str = "gpt-4",
-        custom_model: bool = None,
-        prompt: str = "hello world",
-        token: str = "",
-    ):
-        _model = MODELS[model] if not custom_model else custom_model
+    def create(self, custom_model: bool = None, prompt: str = "hello world", token: str = ""):
+        _model = custom_model if custom_model else MODELS[self]
 
         client = PoeClient(token)
 
@@ -334,12 +317,7 @@ class StreamingCompletion:
 
 
 class Completion:
-    def create(
-        model: str = "gpt-4",
-        custom_model: str = None,
-        prompt: str = "hello world",
-        token: str = "",
-    ):
+    def create(self, custom_model: str = None, prompt: str = "hello world", token: str = ""):
         models = {
             "sage": "capybara",
             "gpt-4": "beaver",
@@ -348,7 +326,7 @@ class Completion:
             "gpt-3.5-turbo": "chinchilla",
         }
 
-        _model = models[model] if not custom_model else custom_model
+        _model = custom_model if custom_model else models[self]
 
         client = PoeClient(token)
 

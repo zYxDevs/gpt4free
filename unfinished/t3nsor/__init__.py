@@ -67,33 +67,38 @@ class Completion:
         }
     }
 
-    def create(
-        prompt: str    = 'hello world',
-        messages: list = []) -> T3nsorResponse:
+    def create(self, messages: list = []) -> T3nsorResponse:
         
-        response = post('https://www.t3nsor.tech/api/chat', headers = headers, json = Completion.model | {
-            'messages'  : messages,
-            'key'       : '',
-            'prompt'    : prompt
-        })
+        response = post(
+            'https://www.t3nsor.tech/api/chat',
+            headers=headers,
+            json=(
+                Completion.model
+                | {'messages': messages, 'key': '', 'prompt': self}
+            ),
+        )
 
-        return T3nsorResponse({
-            'id'     : f'cmpl-1337-{int(time())}', 
-            'object' : 'text_completion', 
-            'created': int(time()), 
-            'model'  : Completion.model, 
-            'choices': [{
-                    'text'          : response.text, 
-                    'index'         : 0, 
-                    'logprobs'      : None, 
-                    'finish_reason' : 'stop'
-            }], 
-            'usage': {
-                'prompt_chars'     : len(prompt), 
-                'completion_chars' : len(response.text), 
-                'total_chars'      : len(prompt) + len(response.text)
+        return T3nsorResponse(
+            {
+                'id': f'cmpl-1337-{int(time())}',
+                'object': 'text_completion',
+                'created': int(time()),
+                'model': Completion.model,
+                'choices': [
+                    {
+                        'text': response.text,
+                        'index': 0,
+                        'logprobs': None,
+                        'finish_reason': 'stop',
+                    }
+                ],
+                'usage': {
+                    'prompt_chars': len(self),
+                    'completion_chars': len(response.text),
+                    'total_chars': len(self) + len(response.text),
+                },
             }
-        })
+        )
 
 class StreamCompletion:
     model = {
@@ -103,35 +108,39 @@ class StreamCompletion:
         }
     }
 
-    def create(
-        prompt: str    = 'hello world',
-        messages: list = [])  -> T3nsorResponse:
+    def create(self, messages: list = []) -> T3nsorResponse:
         
         print('t3nsor api is down, this may not work, refer to another module')
 
-        response = post('https://www.t3nsor.tech/api/chat', headers = headers, stream = True, json = Completion.model | {
-            'messages'  : messages,
-            'key'       : '',
-            'prompt'    : prompt
-        })
-        
+        response = post(
+            'https://www.t3nsor.tech/api/chat',
+            headers=headers,
+            stream=True,
+            json=(
+                Completion.model
+                | {'messages': messages, 'key': '', 'prompt': self}
+            ),
+        )
+
         for chunk in response.iter_content(chunk_size = 2046):
-            yield T3nsorResponse({
-                'id'     : f'cmpl-1337-{int(time())}', 
-                'object' : 'text_completion', 
-                'created': int(time()), 
-                'model'  : Completion.model, 
-                
-                'choices': [{
-                        'text'          : chunk.decode(), 
-                        'index'         : 0, 
-                        'logprobs'      : None, 
-                        'finish_reason' : 'stop'
-                }],
-                
-                'usage': {
-                    'prompt_chars'     : len(prompt), 
-                    'completion_chars' : len(chunk.decode()), 
-                    'total_chars'      : len(prompt) + len(chunk.decode())
+            yield T3nsorResponse(
+                {
+                    'id': f'cmpl-1337-{int(time())}',
+                    'object': 'text_completion',
+                    'created': int(time()),
+                    'model': Completion.model,
+                    'choices': [
+                        {
+                            'text': chunk.decode(),
+                            'index': 0,
+                            'logprobs': None,
+                            'finish_reason': 'stop',
+                        }
+                    ],
+                    'usage': {
+                        'prompt_chars': len(self),
+                        'completion_chars': len(chunk.decode()),
+                        'total_chars': len(self) + len(chunk.decode()),
+                    },
                 }
-            })
+            )

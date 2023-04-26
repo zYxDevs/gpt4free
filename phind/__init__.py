@@ -52,28 +52,22 @@ class PhindResponse:
 
 
 class Search:
-    def create(prompt: str, actualSearch: bool = True, language: str = 'en') -> dict: # None = no search
+    def create(self, actualSearch: bool = True, language: str = 'en') -> dict: # None = no search
         if user_agent == '':
             raise ValueError('user_agent must be set, refer to documentation')
-        
+
         if not actualSearch:
             return {
                 '_type': 'SearchResponse',
-                'queryContext': {
-                    'originalQuery': prompt
-                },
+                'queryContext': {'originalQuery': self},
                 'webPages': {
-                    'webSearchUrl': f'https://www.bing.com/search?q={quote(prompt)}',
+                    'webSearchUrl': f'https://www.bing.com/search?q={quote(self)}',
                     'totalEstimatedMatches': 0,
-                    'value': []
+                    'value': [],
                 },
-                'rankingResponse': {
-                    'mainline': {
-                        'items': []
-                    }
-                }
+                'rankingResponse': {'mainline': {'items': []}},
             }
-        
+
         headers = {
             'authority': 'www.phind.com',
             'accept': '*/*',
@@ -89,51 +83,45 @@ class Search:
             'sec-fetch-site': 'same-origin',
             'user-agent': user_agent
         }
-        
-        return post('https://www.phind.com/api/bing/search', headers = headers, json = { 
-            'q': prompt,
-            'userRankList': {},
-            'browserLanguage': language}).json()['rawBingResults']
+
+        return post(
+            'https://www.phind.com/api/bing/search',
+            headers=headers,
+            json={'q': self, 'userRankList': {}, 'browserLanguage': language},
+        ).json()['rawBingResults']
 
 
 class Completion:
-    def create(
-        model = 'gpt-4', 
-        prompt: str = '', 
-        results: dict = None, 
-        creative: bool = False, 
-        detailed: bool = False, 
-        codeContext: str = '',
-        language: str = 'en') -> PhindResponse:
+    def create(self, prompt: str = '', results: dict = None, creative: bool = False, detailed: bool = False, codeContext: str = '', language: str = 'en') -> PhindResponse:
         
         if user_agent == '':
             raise ValueError('user_agent must be set, refer to documentation')
-        
+
         if results is None:
             results = Search.create(prompt, actualSearch = True)
-        
+
         if len(codeContext) > 2999:
             raise ValueError('codeContext must be less than 3000 characters')
-        
+
         models = {
             'gpt-4' : 'expert',
             'gpt-3.5-turbo' : 'intermediate',
             'gpt-3.5': 'intermediate',
         }
-        
+
         json_data = {
-            'question'    : prompt,
-            'bingResults' : results, #response.json()['rawBingResults'],
-            'codeContext' : codeContext,
+            'question': prompt,
+            'bingResults': results,
+            'codeContext': codeContext,
             'options': {
-                'skill'   : models[model],
-                'date'    : datetime.now().strftime("%d/%m/%Y"),
+                'skill': models[self],
+                'date': datetime.now().strftime("%d/%m/%Y"),
                 'language': language,
                 'detailed': detailed,
-                'creative': creative
-            }
+                'creative': creative,
+            },
         }
-        
+
         headers = {
             'authority': 'www.phind.com',
             'accept': '*/*',
@@ -150,36 +138,40 @@ class Completion:
             'sec-fetch-site': 'same-origin',
             'user-agent': user_agent
         }
-        
-        completion = ''
+
         response   = post('https://www.phind.com/api/infer/answer', headers = headers, json = json_data, timeout=99999, impersonate='chrome110')
-        for line in response.text.split('\r\n\r\n'):
-            completion += (line.replace('data: ', ''))
-        
-        return PhindResponse({
-            'id'     : f'cmpl-1337-{int(time())}', 
-            'object' : 'text_completion', 
-            'created': int(time()), 
-            'model'  : models[model], 
-            'choices': [{
-                    'text'          : completion, 
-                    'index'         : 0, 
-                    'logprobs'      : None, 
-                    'finish_reason' : 'stop'
-            }], 
-            'usage': {
-                'prompt_tokens'     : len(prompt), 
-                'completion_tokens' : len(completion), 
-                'total_tokens'      : len(prompt) + len(completion)
+        completion = ''.join(
+            (line.replace('data: ', ''))
+            for line in response.text.split('\r\n\r\n')
+        )
+        return PhindResponse(
+            {
+                'id': f'cmpl-1337-{int(time())}',
+                'object': 'text_completion',
+                'created': int(time()),
+                'model': models[self],
+                'choices': [
+                    {
+                        'text': completion,
+                        'index': 0,
+                        'logprobs': None,
+                        'finish_reason': 'stop',
+                    }
+                ],
+                'usage': {
+                    'prompt_tokens': len(prompt),
+                    'completion_tokens': len(completion),
+                    'total_tokens': len(prompt) + len(completion),
+                },
             }
-        })
+        )
         
 
 class StreamingCompletion:
     message_queue    = Queue()
     stream_completed = False
     
-    def request(model, prompt, results, creative, detailed, codeContext, language) -> None:
+    def request(self, prompt, results, creative, detailed, codeContext, language) -> None:
         
         models = {
             'gpt-4' : 'expert',
@@ -188,16 +180,16 @@ class StreamingCompletion:
         }
 
         json_data = {
-            'question'    : prompt,
-            'bingResults' : results,
-            'codeContext' : codeContext,
+            'question': prompt,
+            'bingResults': results,
+            'codeContext': codeContext,
             'options': {
-                'skill'   : models[model],
-                'date'    : datetime.now().strftime("%d/%m/%Y"),
+                'skill': models[self],
+                'date': datetime.now().strftime("%d/%m/%Y"),
                 'language': language,
                 'detailed': detailed,
-                'creative': creative
-            }
+                'creative': creative,
+            },
         }
 
         headers = {
@@ -216,7 +208,7 @@ class StreamingCompletion:
             'sec-fetch-site': 'same-origin',
             'user-agent': user_agent
         }
-        
+
         response   = post('https://www.phind.com/api/infer/answer', 
             headers = headers, json = json_data, timeout=99999, impersonate='chrome110', content_callback=StreamingCompletion.handle_stream_response)
 
