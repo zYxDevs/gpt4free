@@ -2,12 +2,75 @@ from __future__ import annotations
 
 import json
 import uuid
-from aiohttp import ClientSession, ClientTimeout, ClientResponseError
 
 from ..typing import AsyncResult, Messages
 from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
-from .helper import format_prompt
 from ..image import ImageResponse
+from ..requests import StreamSession, raise_for_status
+from ..errors import ResponseStatusError
+
+MODELS = {
+    'chat': {
+        'gpt-4o-2024-11-20': {'persona_id': "gpt"},
+        'gpt-4o': {'persona_id': "summarizer"},
+        'gpt-4o-mini': {'persona_id': "gemini-1-5-flash"},
+
+        'o1-preview-': {'persona_id': "openai-o-one"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'o1-preview-2024-09-12-': {'persona_id': "orion"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'o1-mini-': {'persona_id': "openai-o-one-mini"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        
+        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo': {'persona_id': "llama-three-point-one"},
+        'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo': {'persona_id': "llama-3-2"},
+        'codellama/CodeLlama-34b-Instruct-hf': {'persona_id': "codellama-CodeLlama-34b-Instruct-hf"},
+        
+        'gemini-1.5-pro': {'persona_id': "gemini-1-5-pro"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'gemini-1.5-flash': {'persona_id': "amigo"},
+        
+        'claude-3-5-sonnet-20240620': {'persona_id': "claude"},
+        'claude-3-5-sonnet-20241022': {'persona_id': "clude-claude-3-5-sonnet-20241022"},
+        'claude-3-5-haiku-latest': {'persona_id': "3-5-haiku"},
+        
+        'Qwen/Qwen2.5-72B-Instruct-Turbo': {'persona_id': "qwen-2-5"},
+        
+        'google/gemma-2b-it': {'persona_id': "google-gemma-2b-it"},
+        'google/gemma-7b': {'persona_id': "google-gemma-7b"}, # Error handling AIML chat completion stream
+        
+        'Gryphe/MythoMax-L2-13b': {'persona_id': "Gryphe-MythoMax-L2-13b"},
+        
+        'mistralai/Mistral-7B-Instruct-v0.3': {'persona_id': "mistralai-Mistral-7B-Instruct-v0.1"},
+        'mistralai/mistral-tiny': {'persona_id': "mistralai-mistral-tiny"},
+        'mistralai/mistral-nemo': {'persona_id': "mistralai-mistral-nemo"},
+        
+        'deepseek-ai/deepseek-llm-67b-chat': {'persona_id': "deepseek-ai-deepseek-llm-67b-chat"},
+        
+        'databricks/dbrx-instruct': {'persona_id': "databricks-dbrx-instruct"},
+        
+        'NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO': {'persona_id': "NousResearch-Nous-Hermes-2-Mixtral-8x7B-DPO"},
+        
+        'x-ai/grok-beta': {'persona_id': "x-ai-grok-beta"},
+        
+        'anthracite-org/magnum-v4-72b': {'persona_id': "anthracite-org-magnum-v4-72b"},
+        
+        'cohere/command-r-plus': {'persona_id': "cohere-command-r-plus"},
+        
+        'ai21/jamba-1-5-mini': {'persona_id': "ai21-jamba-1-5-mini"},
+        
+        'zero-one-ai/Yi-34B': {'persona_id': "zero-one-ai-Yi-34B"} # Error handling AIML chat completion stream
+    },
+    
+    'image': {
+        'flux-pro/v1.1': {'persona_id': "flux-1-1-pro"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'flux-realism': {'persona_id': "flux-realism"},
+        'flux-pro': {'persona_id': "flux-pro"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'flux-pro/v1.1-ultra': {'persona_id': "flux-pro-v1.1-ultra"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'flux-pro/v1.1-ultra-raw': {'persona_id': "flux-pro-v1.1-ultra-raw"}, # Amigo, your balance is not enough to make the request, wait until 12 UTC or upgrade your plan
+        'flux/dev': {'persona_id': "flux-dev"},
+
+        'dall-e-3': {'persona_id': "dalle-three"},
+
+        'recraft-v3': {'persona_id': "recraft"}
+    }
+}
 
 class AmigoChat(AsyncGeneratorProvider, ProviderModelMixin):
     url = "https://amigochat.io/chat/"
@@ -17,68 +80,71 @@ class AmigoChat(AsyncGeneratorProvider, ProviderModelMixin):
     supports_stream = True
     supports_system_message = True
     supports_message_history = True
-    
+       
     default_model = 'gpt-4o-mini'
-    
-    chat_models = [
-        'gpt-4o',
-        default_model,
-        'o1-preview',
-        'o1-mini',
-        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo',
-        'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo',
-        'claude-3-sonnet-20240229',
-        'gemini-1.5-pro',
-    ]
-    
-    image_models = [
-        'flux-pro/v1.1',
-        'flux-realism',
-        'flux-pro',
-        'dalle-e-3',
-    ]
-    
-    models = [*chat_models, *image_models]
+
+    chat_models = list(MODELS['chat'].keys())
+    image_models = list(MODELS['image'].keys())
+    models = chat_models + image_models
     
     model_aliases = {
-        "o1": "o1-preview",
+        ### chat ###
+        "gpt-4o": "gpt-4o-2024-11-20",
+        "gpt-4o-mini": "gpt-4o-mini",
+        
         "llama-3.1-405b": "meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo",
         "llama-3.2-90b": "meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo",
-        "claude-3.5-sonnet": "claude-3-sonnet-20240229",
-        "gemini-pro": "gemini-1.5-pro",
+        "codellama-34b": "codellama/CodeLlama-34b-Instruct-hf",
         
-        "flux-pro": "flux-pro/v1.1",
-        "dalle-3": "dalle-e-3",
+        "gemini-flash": "gemini-1.5-flash",
+        
+        "claude-3.5-sonnet": "claude-3-5-sonnet-20240620",
+        "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
+        "claude-3.5-haiku": "claude-3-5-haiku-latest",
+        
+        "qwen-2.5-72b": "Qwen/Qwen2.5-72B-Instruct-Turbo",
+        "gemma-2b": "google/gemma-2b-it",
+        
+        "mythomax-13b": "Gryphe/MythoMax-L2-13b",
+        
+        "mixtral-7b": "mistralai/Mistral-7B-Instruct-v0.3",
+        "mistral-tiny": "mistralai/mistral-tiny",
+        "mistral-nemo": "mistralai/mistral-nemo",
+        
+        "deepseek-chat": "deepseek-ai/deepseek-llm-67b-chat",
+        
+        "dbrx-instruct": "databricks/dbrx-instruct",
+        
+        "mixtral-8x7b-dpo": "NousResearch/Nous-Hermes-2-Mixtral-8x7B-DPO",
+        
+        "grok-beta": "x-ai/grok-beta",
+        
+        "magnum-72b": "anthracite-org/magnum-v4-72b",
+        
+        "command-r-plus": "cohere/command-r-plus",
+        
+        "jamba-mini": "ai21/jamba-1-5-mini",
+        
+        
+        ### image ###
+        "flux-realism": "flux-realism",
+        "flux-dev": "flux/dev",
     }
-
-    persona_ids = {
-        'gpt-4o': "gpt",
-        'gpt-4o-mini': "amigo",
-        'o1-preview': "openai-o-one",
-        'o1-mini': "openai-o-one-mini",
-        'meta-llama/Meta-Llama-3.1-405B-Instruct-Turbo': "llama-three-point-one",
-        'meta-llama/Llama-3.2-90B-Vision-Instruct-Turbo': "llama-3-2",
-        'claude-3-sonnet-20240229': "claude",
-        'gemini-1.5-pro': "gemini-1-5-pro",
-        'flux-pro/v1.1': "flux-1-1-pro",
-        'flux-realism': "flux-realism",
-        'flux-pro': "flux-pro",
-        'dalle-e-3': "dalle-three",
-    }
-
-    @classmethod
-    def get_model(cls, model: str) -> str:
-        if model in cls.models:
-            return model
-        elif model in cls.model_aliases:
-            return cls.model_aliases[model]
-        else:
-            return cls.default_model
 
     @classmethod
     def get_personaId(cls, model: str) -> str:
-        return cls.persona_ids[model]
-
+        if model in cls.chat_models:
+            return MODELS['chat'][model]['persona_id']
+        elif model in cls.image_models:
+            return MODELS['image'][model]['persona_id']
+        else:
+            raise ValueError(f"Unknown model: {model}")
+            
+    @staticmethod
+    def generate_chat_id() -> str:
+        """Generate a chat ID in format: 8-4-4-4-12 hexadecimal digits"""
+        return str(uuid.uuid4())
+		
     @classmethod
     async def create_async_generator(
         cls,
@@ -86,6 +152,12 @@ class AmigoChat(AsyncGeneratorProvider, ProviderModelMixin):
         messages: Messages,
         proxy: str = None,
         stream: bool = False,
+        timeout: int = 300,
+        frequency_penalty: float = 0,
+        max_tokens: int = 4000,
+        presence_penalty: float = 0,
+        temperature: float = 0.5,
+        top_p: float = 0.95,
         **kwargs
     ) -> AsyncResult:
         model = cls.get_model(model)
@@ -113,31 +185,27 @@ class AmigoChat(AsyncGeneratorProvider, ProviderModelMixin):
                     "x-device-language": "en-US",
                     "x-device-platform": "web",
                     "x-device-uuid": device_uuid,
-                    "x-device-version": "1.0.32"
+                    "x-device-version": "1.0.45"
                 }
                 
-                async with ClientSession(headers=headers) as session:
-                    if model in cls.chat_models:
-                        # Chat completion
+                async with StreamSession(headers=headers, proxy=proxy) as session:
+                    if model not in cls.image_models:
                         data = {
-                            "messages": [{"role": m["role"], "content": m["content"]} for m in messages],
+                            "chatId": cls.generate_chat_id(),
+                            "frequency_penalty": frequency_penalty,
+                            "max_tokens": max_tokens,
+                            "messages": messages,
                             "model": model,
                             "personaId": cls.get_personaId(model),
-                            "frequency_penalty": 0,
-                            "max_tokens": 4000,
-                            "presence_penalty": 0,
+                            "presence_penalty": presence_penalty,
                             "stream": stream,
-                            "temperature": 0.5,
-                            "top_p": 0.95
+                            "temperature": temperature,
+                            "top_p": top_p
                         }
-                        
-                        timeout = ClientTimeout(total=300)  # 5 minutes timeout
-                        async with session.post(cls.chat_api_endpoint, json=data, proxy=proxy, timeout=timeout) as response:
-                            if response.status not in (200, 201):
-                                error_text = await response.text()
-                                raise Exception(f"Error {response.status}: {error_text}")
-                            
-                            async for line in response.content:
+                        print(data)
+                        async with session.post(cls.chat_api_endpoint, json=data, timeout=timeout) as response:
+                            await raise_for_status(response)
+                            async for line in response.iter_lines():
                                 line = line.decode('utf-8').strip()
                                 if line.startswith('data: '):
                                     if line == 'data: [DONE]':
@@ -164,11 +232,9 @@ class AmigoChat(AsyncGeneratorProvider, ProviderModelMixin):
                             "model": model,
                             "personaId": cls.get_personaId(model)
                         }
-                        async with session.post(cls.image_api_endpoint, json=data, proxy=proxy) as response:
-                            response.raise_for_status()
-                            
+                        async with session.post(cls.image_api_endpoint, json=data) as response:
+                            await raise_for_status(response)
                             response_data = await response.json()
-                            
                             if "data" in response_data:
                                 image_urls = []
                                 for item in response_data["data"]:
@@ -179,10 +245,8 @@ class AmigoChat(AsyncGeneratorProvider, ProviderModelMixin):
                                     yield ImageResponse(image_urls, prompt)
                             else:
                                 yield None
-                
                 break
-            
-            except (ClientResponseError, Exception) as e:
+            except (ResponseStatusError, Exception) as e:
                 retry_count += 1
                 if retry_count >= max_retries:
                     raise e

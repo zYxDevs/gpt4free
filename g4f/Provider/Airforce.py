@@ -1,245 +1,270 @@
-from __future__ import annotations
-import random
 import json
+import random
 import re
+import requests
 from aiohttp import ClientSession
+from typing import List
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
 from ..typing import AsyncResult, Messages
-from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
 from ..image import ImageResponse
+from .base_provider import AsyncGeneratorProvider, ProviderModelMixin
 
-def split_long_message(message: str, max_length: int = 4000) -> list[str]:
-    return [message[i:i+max_length] for i in range(0, len(message), max_length)]
+from .. import debug
+
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+ 
+def split_message(message: str, max_length: int = 1000) -> List[str]:
+    """Splits the message into parts up to (max_length)."""
+    chunks = []
+    while len(message) > max_length:
+        split_point = message.rfind(' ', 0, max_length)
+        if split_point == -1:
+            split_point = max_length
+        chunks.append(message[:split_point])
+        message = message[split_point:].strip()
+    if message:
+        chunks.append(message)
+    return chunks
 
 class Airforce(AsyncGeneratorProvider, ProviderModelMixin):
-    url = "https://api.airforce"
-    image_api_endpoint = "https://api.airforce/imagine2"
-    text_api_endpoint = "https://api.airforce/chat/completions"
-    working = True
-    
-    default_model = 'llama-3-70b-chat'
+    url = "https://llmplayground.net"
+    api_endpoint_completions = "https://api.airforce/chat/completions"
+    api_endpoint_imagine2 = "https://api.airforce/imagine2"
 
+    working = True
+    needs_auth = True
     supports_stream = True
     supports_system_message = True
     supports_message_history = True
+
+    default_model = "gpt-4o-mini"
+    default_image_model = "flux"
     
-    text_models = [
-        'claude-3-haiku-20240307', 
-        'claude-3-sonnet-20240229', 
-        'claude-3-5-sonnet-20240620', 
-        'claude-3-opus-20240229', 
-        'chatgpt-4o-latest', 
-        'gpt-4', 
-        'gpt-4-turbo', 
-        'gpt-4o-mini-2024-07-18', 
-        'gpt-4o-mini', 
-        'gpt-3.5-turbo', 
-        'gpt-3.5-turbo-0125', 
-        'gpt-3.5-turbo-1106', 
-        default_model,
-        'llama-3-70b-chat-turbo', 
-        'llama-3-8b-chat', 
-        'llama-3-8b-chat-turbo', 
-        'llama-3-70b-chat-lite', 
-        'llama-3-8b-chat-lite', 
-        'llama-2-13b-chat', 
-        'llama-3.1-405b-turbo', 
-        'llama-3.1-70b-turbo', 
-        'llama-3.1-8b-turbo', 
-        'LlamaGuard-2-8b', 
-        'Llama-Guard-7b', 
-        'Llama-3.2-90B-Vision-Instruct-Turbo',
-        'Mixtral-8x7B-Instruct-v0.1', 
-        'Mixtral-8x22B-Instruct-v0.1', 
-        'Mistral-7B-Instruct-v0.1', 
-        'Mistral-7B-Instruct-v0.2', 
-        'Mistral-7B-Instruct-v0.3', 
-        'Qwen1.5-7B-Chat', 
-        'Qwen1.5-14B-Chat', 
-        'Qwen1.5-72B-Chat', 
-        'Qwen1.5-110B-Chat', 
-        'Qwen2-72B-Instruct', 
-        'gemma-2b-it', 
-        'gemma-2-9b-it', 
-        'gemma-2-27b-it', 
-        'gemini-1.5-flash', 
-        'gemini-1.5-pro', 
-        'deepseek-llm-67b-chat', 
-        'Nous-Hermes-2-Mixtral-8x7B-DPO', 
-        'Nous-Hermes-2-Yi-34B', 
-        'WizardLM-2-8x22B', 
-        'SOLAR-10.7B-Instruct-v1.0', 
-        'MythoMax-L2-13b', 
-        'cosmosrp', 
-    ]
-    
-    image_models = [
-        'flux',
-        'flux-realism',
-        'flux-anime',
-        'flux-3d',
-        'flux-disney',
-        'flux-pixel',
-        'flux-4o',
-        'any-dark',
-    ]
-    
-    models = [
-        *text_models,
-        *image_models,
-    ]
-    
+    hidden_models = {"Flux-1.1-Pro"}
+
+    additional_models_imagine = ["flux-1.1-pro", "dall-e-3"]
+
     model_aliases = {
-        "claude-3-haiku": "claude-3-haiku-20240307",
-        "claude-3-sonnet": "claude-3-sonnet-20240229",
-        "gpt-4o": "chatgpt-4o-latest",
-        "llama-3-70b": "llama-3-70b-chat",
-        "llama-3-8b": "llama-3-8b-chat",
-        "mixtral-8x7b": "Mixtral-8x7B-Instruct-v0.1",
-        "qwen-1.5-7b": "Qwen1.5-7B-Chat",
-        "gemma-2b": "gemma-2b-it",
-        "gemini-flash": "gemini-1.5-flash",
-        "mythomax-l2-13b": "MythoMax-L2-13b",
-        "solar-10.7b": "SOLAR-10.7B-Instruct-v1.0",
+        # Alias mappings for models
+        "openchat-3.5": "openchat-3.5-0106",
+        "deepseek-coder": "deepseek-coder-6.7b-instruct",
+        "hermes-2-dpo": "Nous-Hermes-2-Mixtral-8x7B-DPO",
+        "hermes-2-pro": "hermes-2-pro-mistral-7b",
+        "openhermes-2.5": "openhermes-2.5-mistral-7b",
+        "lfm-40b": "lfm-40b-moe",
+        "discolm-german-7b": "discolm-german-7b-v1",
+        "llama-2-7b": "llama-2-7b-chat-int8",
+        "llama-3.1-70b": "llama-3.1-70b-turbo",
+        "neural-7b": "neural-chat-7b-v3-1",
+        "zephyr-7b": "zephyr-7b-beta",
+        "evil": "any-uncensored",
+        "sdxl": "stable-diffusion-xl-base",
+        "flux-pro": "flux-1.1-pro",
+        "llama-3.1-8b": "llama-3.1-8b-chat"
     }
 
     @classmethod
-    def get_model(cls, model: str) -> str:
-        if model in cls.models:
-            return model
-        elif model in cls.model_aliases:
-            return cls.model_aliases.get(model, cls.default_model)
-        else:
-            return cls.default_model
+    def get_models(cls):
+        if not cls.image_models:
+            try:
+                url = "https://api.airforce/imagine2/models"
+                response = requests.get(url, verify=False)
+                response.raise_for_status()
+                cls.image_models = response.json()
+                cls.image_models.extend(cls.additional_models_imagine)
+            except Exception as e:
+                debug.log(f"Error fetching image models: {e}")
+
+        if not cls.models:
+            try:
+                url = "https://api.airforce/models"
+                response = requests.get(url, verify=False)
+                response.raise_for_status()
+                data = response.json()
+                cls.models = [model['id'] for model in data['data']]
+                cls.models.extend(cls.image_models)
+                cls.models = [model for model in cls.models if model not in cls.hidden_models]
+            except Exception as e:
+                debug.log(f"Error fetching text models: {e}")
+
+        return cls.models
+        
+    @classmethod
+    async def check_api_key(cls, api_key: str) -> bool:
+        """
+        Always returns True to allow all models.
+        """
+        if not api_key or api_key == "null":
+            return True  # No restrictions if no key.
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+        }
+        
+        try:
+            async with ClientSession(headers=headers) as session:
+                async with session.get(f"https://api.airforce/check?key={api_key}") as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data.get('info') in ['Sponsor key', 'Premium key']
+                    return False
+        except Exception as e:
+            print(f"Error checking API key: {str(e)}")
+            return False
+
+    @classmethod
+    def _filter_content(cls, part_response: str) -> str:
+        """
+        Filters out unwanted content from the partial response.
+        """
+        part_response = re.sub(
+            r"One message exceeds the \d+chars per message limit\..+https:\/\/discord\.com\/invite\/\S+",
+            '',
+            part_response
+        )
+
+        part_response = re.sub(
+            r"Rate limit \(\d+\/minute\) exceeded\. Join our discord for more: .+https:\/\/discord\.com\/invite\/\S+",
+            '',
+            part_response
+        )
+
+        return part_response
+
+    @classmethod
+    def _filter_response(cls, response: str) -> str:
+        """
+        Filters the full response to remove system errors and other unwanted text.
+        """
+        filtered_response = re.sub(r"\[ERROR\] '\w{8}-\w{4}-\w{4}-\w{4}-\w{12}'", '', response)  # any-uncensored
+        filtered_response = re.sub(r'<\|im_end\|>', '', filtered_response)  # remove <|im_end|> token
+        filtered_response = re.sub(r'</s>', '', filtered_response)  # neural-chat-7b-v3-1  
+        filtered_response = re.sub(r'^(Assistant: |AI: |ANSWER: |Output: )', '', filtered_response)  # phi-2
+        filtered_response = cls._filter_content(filtered_response)
+        return filtered_response
+
+    @classmethod
+    async def generate_image(
+        cls,
+        model: str,
+        prompt: str,
+        api_key: str,
+        size: str,
+        seed: int,
+        proxy: str = None
+    ) -> AsyncResult:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Accept": "image/avif,image/webp,image/png,image/svg+xml,image/*;q=0.8,*/*;q=0.5",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        params = {"model": model, "prompt": prompt, "size": size, "seed": seed}
+
+        async with ClientSession(headers=headers) as session:
+            async with session.get(cls.api_endpoint_imagine2, params=params, proxy=proxy) as response:
+                if response.status == 200:
+                    image_url = str(response.url)
+                    yield ImageResponse(images=image_url, alt=prompt)
+                else:
+                    error_text = await response.text()
+                    raise RuntimeError(f"Image generation failed: {response.status} - {error_text}")
+
+    @classmethod
+    async def generate_text(
+        cls,
+        model: str,
+        messages: Messages,
+        max_tokens: int,
+        temperature: float,
+        top_p: float,
+        stream: bool,
+        api_key: str,
+        proxy: str = None
+    ) -> AsyncResult:
+        """
+        Generates text, buffers the response, filters it, and returns the final result.
+        """
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:133.0) Gecko/20100101 Firefox/133.0",
+            "Accept": "application/json, text/event-stream",
+            "Accept-Language": "en-US,en;q=0.5",
+            "Accept-Encoding": "gzip, deflate, br, zstd",
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        full_message = "\n".join([msg['content'] for msg in messages])
+        message_chunks = split_message(full_message, max_length=1000)
+
+        data = {
+            "messages": [{"role": "user", "content": chunk} for chunk in message_chunks],
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "top_p": top_p,
+            "stream": stream,
+        }
+
+        async with ClientSession(headers=headers) as session:
+            async with session.post(cls.api_endpoint_completions, json=data, proxy=proxy) as response:
+                response.raise_for_status()
+
+                if stream:
+                    buffer = []  # Buffer to collect partial responses
+                    async for line in response.content:
+                        line = line.decode('utf-8').strip()
+                        if line.startswith('data: '):
+                            try:
+                                json_str = line[6:]  # Remove 'data: ' prefix
+                                chunk = json.loads(json_str)
+                                if 'choices' in chunk and chunk['choices']:
+                                    delta = chunk['choices'][0].get('delta', {})
+                                    if 'content' in delta:
+                                        buffer.append(delta['content'])
+                            except json.JSONDecodeError:
+                                continue
+                    # Combine the buffered response and filter it
+                    filtered_response = cls._filter_response(''.join(buffer))
+                    yield filtered_response
+                else:
+                    # Non-streaming response
+                    result = await response.json()
+                    if 'choices' in result and result['choices']:
+                        message = result['choices'][0].get('message', {})
+                        content = message.get('content', '')
+                        filtered_response = cls._filter_response(content)
+                        yield filtered_response
 
     @classmethod
     async def create_async_generator(
         cls,
         model: str,
         messages: Messages,
+        prompt: str = None,
         proxy: str = None,
-        seed: int = None,
+        max_tokens: int = 4096,
+        temperature: float = 1,
+        top_p: float = 1,
+        stream: bool = True,
+        api_key: str = None,
         size: str = "1:1",
-        stream: bool = False,
+        seed: int = None,
         **kwargs
     ) -> AsyncResult:
+        if not await cls.check_api_key(api_key):
+            pass
+
         model = cls.get_model(model)
-
         if model in cls.image_models:
-            async for result in cls._generate_image(model, messages, proxy, seed, size):
+            if prompt is None:
+                prompt = messages[-1]['content']
+            if seed is None:
+                seed = random.randint(0, 10000)
+            async for result in cls.generate_image(model, prompt, api_key, size, seed, proxy):
                 yield result
-        elif model in cls.text_models:
-            async for result in cls._generate_text(model, messages, proxy, stream):
+        else:
+            async for result in cls.generate_text(model, messages, max_tokens, temperature, top_p, stream, api_key, proxy):
                 yield result
-    
-    @classmethod
-    async def _generate_image(
-        cls,
-        model: str,
-        messages: Messages,
-        proxy: str = None,
-        seed: int = None,
-        size: str = "1:1",
-        **kwargs
-    ) -> AsyncResult:
-        headers = {
-            "accept": "*/*",
-            "accept-language": "en-US,en;q=0.9",
-            "cache-control": "no-cache",
-            "origin": "https://llmplayground.net",
-            "user-agent": "Mozilla/5.0"
-        }
-
-        if seed is None:
-            seed = random.randint(0, 100000)
-
-        prompt = messages[-1]['content']
-
-        async with ClientSession(headers=headers) as session:
-            params = {
-                "model": model,
-                "prompt": prompt,
-                "size": size,
-                "seed": seed
-            }
-            async with session.get(f"{cls.image_api_endpoint}", params=params, proxy=proxy) as response:
-                response.raise_for_status()
-                content_type = response.headers.get('Content-Type', '').lower()
-
-                if 'application/json' in content_type:
-                    async for chunk in response.content.iter_chunked(1024):
-                        if chunk:
-                            yield chunk.decode('utf-8')
-                elif 'image' in content_type:
-                    image_data = b""
-                    async for chunk in response.content.iter_chunked(1024):
-                        if chunk:
-                            image_data += chunk
-                    image_url = f"{cls.image_api_endpoint}?model={model}&prompt={prompt}&size={size}&seed={seed}"
-                    alt_text = f"Generated image for prompt: {prompt}"
-                    yield ImageResponse(images=image_url, alt=alt_text)
-
-    @classmethod
-    async def _generate_text(
-        cls,
-        model: str,
-        messages: Messages,
-        proxy: str = None,
-        stream: bool = False,
-        **kwargs
-    ) -> AsyncResult:
-        headers = {
-            "accept": "*/*",
-            "accept-language": "en-US,en;q=0.9",
-            "authorization": "Bearer missing api key",
-            "content-type": "application/json",
-            "user-agent": "Mozilla/5.0"
-        }
-
-        async with ClientSession(headers=headers) as session:
-            formatted_prompt = cls._format_messages(messages)
-            prompt_parts = split_long_message(formatted_prompt)
-            full_response = ""
-
-            for part in prompt_parts:
-                data = {
-                    "messages": [{"role": "user", "content": part}],
-                    "model": model,
-                    "max_tokens": 4096,
-                    "temperature": 1,
-                    "top_p": 1,
-                    "stream": stream
-                }
-                async with session.post(cls.text_api_endpoint, json=data, proxy=proxy) as response:
-                    response.raise_for_status()
-                    part_response = ""
-                    if stream:
-                        async for line in response.content:
-                            if line:
-                                line = line.decode('utf-8').strip()
-                                if line.startswith("data: ") and line != "data: [DONE]":
-                                    json_data = json.loads(line[6:])
-                                    content = json_data['choices'][0]['delta'].get('content', '')
-                                    part_response += content
-                    else:
-                        json_data = await response.json()
-                        content = json_data['choices'][0]['message']['content']
-                        part_response = content
-
-                    part_response = re.sub(
-                        r"One message exceeds the \d+chars per message limit\..+https:\/\/discord\.com\/invite\/\S+",
-                        '',
-                        part_response
-                    )
-                    
-                    part_response = re.sub(
-                        r"Rate limit \(\d+\/minute\) exceeded\. Join our discord for more: .+https:\/\/discord\.com\/invite\/\S+",
-                        '',
-                        part_response
-                    )
-
-                    full_response += part_response
-            yield full_response
-
-    @classmethod
-    def _format_messages(cls, messages: Messages) -> str:
-        return " ".join([msg['content'] for msg in messages])

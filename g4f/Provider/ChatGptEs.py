@@ -12,17 +12,14 @@ from .helper import format_prompt
 class ChatGptEs(AsyncGeneratorProvider, ProviderModelMixin):
     url = "https://chatgpt.es"
     api_endpoint = "https://chatgpt.es/wp-admin/admin-ajax.php"
+    
     working = True
     supports_stream = True
     supports_system_message = True
     supports_message_history = True
     
     default_model = 'gpt-4o'
-    models = ['gpt-4o', 'gpt-4o-mini', 'chatgpt-4o-latest']
-    
-    model_aliases = {
-        "gpt-4o": "chatgpt-4o-latest",
-    }
+    models = ['gpt-3.5-turbo', 'gpt-4o', 'gpt-4o-mini']
 
     @classmethod
     def get_model(cls, model: str) -> str:
@@ -56,8 +53,10 @@ class ChatGptEs(AsyncGeneratorProvider, ProviderModelMixin):
             nonce_ = re.findall(r'data-nonce="(.+?)"', await initial_response.text())[0]
             post_id = re.findall(r'data-post-id="(.+?)"', await initial_response.text())[0]
 
+            formatted_prompt = format_prompt(messages)
+            
             conversation_history = [
-                "Human: strictly respond in the same language as my prompt, preferably English"
+                "Human: You are a helpful AI assistant. Please respond in the same language that the user uses in their message. Provide accurate, relevant and helpful information while maintaining a friendly and professional tone. If you're not sure about something, please acknowledge that and provide the best information you can while noting any uncertainties. Focus on being helpful while respecting the user's choice of language."
             ]
 
             for message in messages[:-1]:
@@ -71,7 +70,7 @@ class ChatGptEs(AsyncGeneratorProvider, ProviderModelMixin):
                 'post_id': post_id,
                 'url': cls.url,
                 'action': 'wpaicg_chat_shortcode_message',
-                'message': messages[-1]['content'],
+                'message': formatted_prompt,
                 'bot_id': '0',
                 'chatbot_identity': 'shortcode',
                 'wpaicg_chat_client_id': os.urandom(5).hex(),

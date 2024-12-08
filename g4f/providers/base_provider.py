@@ -2,20 +2,18 @@ from __future__ import annotations
 
 import sys
 import asyncio
+
 from asyncio import AbstractEventLoop
 from concurrent.futures import ThreadPoolExecutor
 from abc import abstractmethod
 from inspect import signature, Parameter
-from typing import Callable, Union
-from ..typing import CreateResult, AsyncResult, Messages
-from .types import BaseProvider, FinishReason
-from ..errors import NestAsyncioError, ModelNotSupportedError
-from .. import debug
 
-if sys.version_info < (3, 10):
-    NoneType = type(None)
-else:
-    from types import NoneType
+from ..typing import CreateResult, AsyncResult, Messages
+from .types import BaseProvider
+from .asyncio import get_running_loop, to_sync_generator
+from .response import FinishReason, BaseConversation, SynthesizeData
+from ..errors import ModelNotSupportedError
+from .. import debug
 
 # Set Windows event loop policy for better compatibility with asyncio and curl_cffi
 if sys.platform == 'win32':
@@ -26,30 +24,6 @@ if sys.platform == 'win32':
                 asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     except ImportError:
         pass
-
-def get_running_loop(check_nested: bool) -> Union[AbstractEventLoop, None]:
-    try:
-        loop = asyncio.get_running_loop()
-        # Do not patch uvloop loop because its incompatible.
-        try:
-            import uvloop
-            if isinstance(loop, uvloop.Loop):
-                return loop
-        except (ImportError, ModuleNotFoundError):
-            pass
-        if check_nested and not hasattr(loop.__class__, "_nest_patched"):
-            try:
-                import nest_asyncio
-                nest_asyncio.apply(loop)
-            except ImportError:
-                raise NestAsyncioError('Install "nest_asyncio" package')
-        return loop
-    except RuntimeError:
-        pass
-
-# Fix for RuntimeError: async generator ignored GeneratorExit
-async def await_callback(callback: Callable):
-    return await callback()
 
 class AbstractProvider(BaseProvider):
     """
@@ -83,7 +57,9 @@ class AbstractProvider(BaseProvider):
         loop = loop or asyncio.get_running_loop()
 
         def create_func() -> str:
-            return "".join(cls.create_completion(model, messages, False, **kwargs))
+            chunks = [str(chunk) for chunk in cls.create_completion(model, messages, False, **kwargs) if chunk]
+            if chunks:
+                return "".join(chunks)
 
         return await asyncio.wait_for(
             loop.run_in_executor(executor, create_func),
@@ -91,12 +67,13 @@ class AbstractProvider(BaseProvider):
         )
 
     @classmethod
-    def get_parameters(cls) -> dict:
-        return signature(
+    def get_parameters(cls) -> dict[str, Parameter]:
+        return {name: parameter for name, parameter in signature(
             cls.create_async_generator if issubclass(cls, AsyncGeneratorProvider) else
             cls.create_async if issubclass(cls, AsyncProvider) else
             cls.create_completion
-        ).parameters
+        ).parameters.items() if name not in ["kwargs", "model", "messages"]
+            and (name != "stream" or cls.supports_stream)}
 
     @classmethod
     @property
@@ -116,16 +93,13 @@ class AbstractProvider(BaseProvider):
 
         args = ""
         for name, param in cls.get_parameters().items():
-            if name in ("self", "kwargs") or (name == "stream" and not cls.supports_stream):
-                continue
             args += f"\n    {name}"
             args += f": {get_type_name(param.annotation)}" if param.annotation is not Parameter.empty else ""
             default_value = f'"{param.default}"' if isinstance(param.default, str) else param.default
             args += f" = {default_value}" if param.default is not Parameter.empty else ""
             args += ","
-        
-        return f"g4f.Provider.{cls.__name__} supports: ({args}\n)"
 
+        return f"g4f.Provider.{cls.__name__} supports: ({args}\n)"
 
 class AsyncProvider(AbstractProvider):
     """
@@ -154,7 +128,7 @@ class AsyncProvider(AbstractProvider):
         Returns:
             CreateResult: The result of the completion creation.
         """
-        get_running_loop(check_nested=True)
+        get_running_loop(check_nested=False)
         yield asyncio.run(cls.create_async(model, messages, **kwargs))
 
     @staticmethod
@@ -208,25 +182,9 @@ class AsyncGeneratorProvider(AsyncProvider):
         Returns:
             CreateResult: The result of the streaming completion creation.
         """
-        loop = get_running_loop(check_nested=True)
-        new_loop = False
-        if loop is None:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            new_loop = True
-
-        generator = cls.create_async_generator(model, messages, stream=stream, **kwargs)
-        gen = generator.__aiter__()
-
-        try:
-            while True:
-                yield loop.run_until_complete(await_callback(gen.__anext__))
-        except StopAsyncIteration:
-            ...
-        finally:
-            if new_loop:
-                loop.close()
-                asyncio.set_event_loop(None)
+        return to_sync_generator(
+            cls.create_async_generator(model, messages, stream=stream, **kwargs)
+        )
 
     @classmethod
     async def create_async(
@@ -248,8 +206,8 @@ class AsyncGeneratorProvider(AsyncProvider):
             str: The created result as a string.
         """
         return "".join([
-            chunk async for chunk in cls.create_async_generator(model, messages, stream=False, **kwargs) 
-            if not isinstance(chunk, (Exception, FinishReason))
+            str(chunk) async for chunk in cls.create_async_generator(model, messages, stream=False, **kwargs) 
+            if chunk and not isinstance(chunk, (Exception, FinishReason, BaseConversation, SynthesizeData))
         ])
 
     @staticmethod
@@ -281,6 +239,8 @@ class ProviderModelMixin:
     default_model: str = None
     models: list[str] = []
     model_aliases: dict[str, str] = {}
+    image_models: list = None
+    last_model: str = None
 
     @classmethod
     def get_models(cls) -> list[str]:
@@ -296,5 +256,6 @@ class ProviderModelMixin:
             model = cls.model_aliases[model]
         elif model not in cls.get_models() and cls.models:
             raise ModelNotSupportedError(f"Model is not supported: {model} in: {cls.__name__}")
+        cls.last_model = model
         debug.last_model = model
         return model

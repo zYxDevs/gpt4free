@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from aiohttp import ClientSession, ClientTimeout
 try:
-    from duckduckgo_search.duckduckgo_search_async import AsyncDDGS
+    from duckduckgo_search import DDGS
     from bs4 import BeautifulSoup
     has_requirements = True
 except ImportError:
     has_requirements = False
 from ...errors import MissingRequirementsError
-    
+from ... import debug
+
 import asyncio
 
 class SearchResults():
-    def __init__(self, results: list):
+    def __init__(self, results: list, used_words: int):
         self.results = results
+        self.used_words = used_words
 
     def __iter__(self):
         yield from self.results
@@ -46,8 +48,6 @@ class SearchResultEntry():
 
 def scrape_text(html: str, max_words: int = None) -> str:
     soup = BeautifulSoup(html, "html.parser")
-    for exclude in soup(["script", "style"]):
-        exclude.extract()
     for selector in [
             "main",
             ".main-content-wrapper",
@@ -67,7 +67,7 @@ def scrape_text(html: str, max_words: int = None) -> str:
         if select:
             select.extract()
     clean_text = ""
-    for paragraph in soup.select("p"):
+    for paragraph in soup.select("p, h1, h2, h3, h4, h5, h6"):
         text = paragraph.get_text()
         for line in text.splitlines():
             words = []
@@ -98,15 +98,15 @@ async def fetch_and_scrape(session: ClientSession, url: str, max_words: int = No
 
 async def search(query: str, n_results: int = 5, max_words: int = 2500, add_text: bool = True) -> SearchResults:
     if not has_requirements:
-        raise MissingRequirementsError('Install "duckduckgo-search" and "beautifulsoup4" package')
-    async with AsyncDDGS() as ddgs:
+        raise MissingRequirementsError('Install "duckduckgo-search" and "beautifulsoup4" package | pip install -U g4f[search]')
+    with DDGS() as ddgs:
         results = []
-        for result in  await ddgs.atext(
+        for result in ddgs.text(
                 query,
                 region="wt-wt",
                 safesearch="moderate",
                 timelimit="y",
-                max_results=n_results
+                max_results=n_results,
             ):
             results.append(SearchResultEntry(
                 result["title"],
@@ -122,6 +122,7 @@ async def search(query: str, n_results: int = 5, max_words: int = 2500, add_text
                 texts = await asyncio.gather(*requests)
 
         formatted_results = []
+        used_words = 0
         left_words = max_words
         for i, entry in enumerate(results):
             if add_text:
@@ -134,13 +135,14 @@ async def search(query: str, n_results: int = 5, max_words: int = 2500, add_text
                     left_words -= entry.snippet.count(" ")
                 if 0 > left_words:
                     break
+            used_words = max_words - left_words
             formatted_results.append(entry)
 
-        return SearchResults(formatted_results)
+        return SearchResults(formatted_results, used_words)
 
-def get_search_message(prompt) -> str:
+def get_search_message(prompt, n_results: int = 5, max_words: int = 2500) -> str:
     try:
-        search_results = asyncio.run(search(prompt))
+        search_results = asyncio.run(search(prompt, n_results, max_words))
         message = f"""
 {search_results}
 
@@ -151,7 +153,8 @@ Make sure to add the sources of cites using [[Number]](Url) notation after the r
 User request:
 {prompt}
 """
+        debug.log(f"Web search: '{prompt.strip()[:50]}...' {search_results.used_words} Words")
         return message
     except Exception as e:
-        print("Couldn't do web search:", e)
+        debug.log(f"Couldn't do web search: {e.__class__.__name__}: {e}")
         return prompt
