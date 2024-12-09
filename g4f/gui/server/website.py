@@ -1,11 +1,12 @@
 import uuid
 from flask import render_template, redirect
 
+def redirect_home():
+    return redirect('/chat')
+
 class Website:
     def __init__(self, app) -> None:
         self.app = app
-        def redirect_home():
-            return redirect('/chat')
         self.routes = {
             '/': {
                 'function': redirect_home,
@@ -27,11 +28,15 @@ class Website:
                 'function': redirect_home,
                 'methods': ['GET', 'POST']
             },
+            '/images/': {
+                'function': redirect_home,
+                'methods': ['GET', 'POST']
+            },
         }
 
     def _chat(self, conversation_id):
         if '-' not in conversation_id:
-            return redirect('/chat')
+            return redirect_home()
         return render_template('index.html', chat_id=conversation_id)
 
     def _index(self):

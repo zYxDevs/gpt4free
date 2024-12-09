@@ -21,10 +21,12 @@ RATE_LIMIT_ERROR_MESSAGE = "当前地区当日额度已消耗完"
 
 class FreeGpt(AsyncGeneratorProvider, ProviderModelMixin):
     url = "https://freegptsnav.aifree.site"
+    
     working = True
     supports_message_history = True
     supports_system_message = True
-    default_model = 'llama-3.1-70b'
+    
+    default_model = 'gemini-pro'
 
     @classmethod
     async def create_async_generator(

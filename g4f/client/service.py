@@ -7,14 +7,14 @@ from ..errors import ProviderNotFoundError, ModelNotFoundError, ProviderNotWorki
 from ..models import Model, ModelUtils, default
 from ..Provider import ProviderUtils
 from ..providers.types import BaseRetryProvider, ProviderType
-from ..providers.retry_provider import IterProvider
+from ..providers.retry_provider import IterListProvider
 
 def convert_to_provider(provider: str) -> ProviderType:
     if " " in provider:
         provider_list = [ProviderUtils.convert[p] for p in provider.split() if p in ProviderUtils.convert]
         if not provider_list:
             raise ProviderNotFoundError(f'Providers not found: {provider}')
-        provider = IterProvider(provider_list)
+        provider = IterListProvider(provider_list, False)
     elif provider in ProviderUtils.convert:
         provider = ProviderUtils.convert[provider]
     elif provider:
@@ -55,47 +55,54 @@ def get_model_and_provider(model    : Union[Model, str],
         provider = convert_to_provider(provider)
 
     if isinstance(model, str):
-        
         if model in ModelUtils.convert:
             model = ModelUtils.convert[model]
     
     if not provider:
         if not model:
             model = default
+            provider = model.best_provider
         elif isinstance(model, str):
-            raise ModelNotFoundError(f'Model not found: {model}')
-        provider = model.best_provider
-
+            if model in ProviderUtils.convert:
+                provider = ProviderUtils.convert[model]
+                model = provider.default_model if hasattr(provider, "default_model") else ""
+            else:
+                raise ModelNotFoundError(f'Model not found: {model}')
+        elif isinstance(model, Model):
+            provider = model.best_provider
+        else:
+            raise ValueError(f"Unexpected type: {type(model)}")
     if not provider:
         raise ProviderNotFoundError(f'No provider found for model: {model}')
+
+    provider_name = provider.__name__ if hasattr(provider, "__name__") else type(provider).__name__
 
     if isinstance(model, Model):
         model = model.name
 
     if not ignore_working and not provider.working:
-        raise ProviderNotWorkingError(f'{provider.__name__} is not working')
+        raise ProviderNotWorkingError(f"{provider_name} is not working")
 
-    if not ignore_working and isinstance(provider, BaseRetryProvider):
-        provider.providers = [p for p in provider.providers if p.working]
-
-    if ignored and isinstance(provider, BaseRetryProvider):
-        provider.providers = [p for p in provider.providers if p.__name__ not in ignored]
+    if isinstance(provider, BaseRetryProvider):
+        if not ignore_working:
+            provider.providers = [p for p in provider.providers if p.working]
+        if ignored:
+            provider.providers = [p for p in provider.providers if p.__name__ not in ignored]
 
     if not ignore_stream and not provider.supports_stream and stream:
-        raise StreamNotSupportedError(f'{provider.__name__} does not support "stream" argument')
+        raise StreamNotSupportedError(f'{provider_name} does not support "stream" argument')
 
-    if debug.logging:
-        if model:
-            print(f'Using {provider.__name__} provider and {model} model')
-        else:
-            print(f'Using {provider.__name__} provider')
+    if model:
+        debug.log(f'Using {provider_name} provider and {model} model')
+    else:
+        debug.log(f'Using {provider_name} provider')
 
     debug.last_provider = provider
     debug.last_model = model
 
     return model, provider
 
-def get_last_provider(as_dict: bool = False) -> Union[ProviderType, dict[str, str]]:
+def get_last_provider(as_dict: bool = False) -> Union[ProviderType, dict[str, str], None]:
     """
     Retrieves the last used provider.
 
@@ -108,11 +115,14 @@ def get_last_provider(as_dict: bool = False) -> Union[ProviderType, dict[str, st
     last = debug.last_provider
     if isinstance(last, BaseRetryProvider):
         last = last.last_provider
-    if last and as_dict:
-        return {
-            "name": last.__name__,
-            "url": last.url,
-            "model": debug.last_model,
-            "label": last.label if hasattr(last, "label") else None
-        }
+    if as_dict:
+        if last:
+            return {
+                "name": last.__name__ if hasattr(last, "__name__") else type(last).__name__,
+                "url": last.url,
+                "model": debug.last_model,
+                "label": getattr(last, "label", None) if hasattr(last, "label") else None
+            }
+        else:
+            return {}
     return last
