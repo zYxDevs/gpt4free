@@ -14,6 +14,8 @@ from datetime import (
     timezone
 )
 
+from .har_file import RequestConfig
+
 cores       = [16, 24, 32]
 screens     = [3000, 4000, 6000]
 maxAttempts = 500000
@@ -382,11 +384,11 @@ def get_config(user_agent):
     config = [
         core + screen,
         get_parse_time(),
-        4294705152,
+        None,
         random.random(),
         user_agent,
         None,
-        "remix-prod-15f1ec0f78ad898b9606a88d384ef76345b82b82", #document.documentElement.getAttribute("data-build"),
+        RequestConfig.data_build, #document.documentElement.getAttribute("data-build"),
         "en-US",
         "en-US,es-US,en,es",
         0,
@@ -395,6 +397,9 @@ def get_config(user_agent):
         random.choice(window_keys),
         time.perf_counter(),
         str(uuid.uuid4()),
+        "",
+        8,
+        int(time.time()),
     ]
     
     return config
@@ -471,7 +476,6 @@ start_time = time.time()
 
 def get_turnstile_token(dx: str, p: str) -> str:
     decoded_bytes = base64.b64decode(dx)
-    # print(decoded_bytes.decode())
     return process_turnstile_token(decoded_bytes.decode(), p)
 
 

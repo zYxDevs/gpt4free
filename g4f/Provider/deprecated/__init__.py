@@ -25,7 +25,6 @@ from .Aichat        import Aichat
 from .Berlin        import Berlin
 from .Phind         import Phind
 from .AiAsk         import AiAsk
-from ..AiChatOnline  import AiChatOnline
 from .ChatAnywhere  import ChatAnywhere
 from .FakeGpt       import FakeGpt
 from .GeekGpt       import GeekGpt
@@ -33,3 +32,4 @@ from .GPTalk        import GPTalk
 from .Hashnode      import Hashnode
 from .Ylokh         import Ylokh
 from .OpenAssistant import OpenAssistant
+from .Bing          import Bing

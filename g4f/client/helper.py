@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import re
-from typing import Iterable, AsyncIterator
+import logging
+
+from typing import AsyncIterator, Iterator, AsyncGenerator, Optional
 
 def filter_json(text: str) -> str:
     """
@@ -18,7 +20,7 @@ def filter_json(text: str) -> str:
         return match.group("code")
     return text
 
-def find_stop(stop, content: str, chunk: str = None):
+def find_stop(stop: Optional[list[str]], content: str, chunk: str = None):
     first = -1
     word = None
     if stop is not None:
@@ -42,6 +44,14 @@ def filter_none(**kwargs) -> dict:
         if value is not None
     }
 
-async def cast_iter_async(iter: Iterable) -> AsyncIterator:
-    for chunk in iter:
-        yield chunk
+async def safe_aclose(generator: AsyncGenerator) -> None:
+    try:
+        if generator and hasattr(generator, 'aclose'):
+            await generator.aclose()
+    except Exception as e:
+        logging.warning(f"Error while closing generator: {e}")
+
+# Helper function to convert a synchronous iterator to an async iterator
+async def to_async_iterator(iterator: Iterator) -> AsyncIterator:
+    for item in iterator:
+        yield item

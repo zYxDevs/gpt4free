@@ -4,19 +4,23 @@ from typing import Any, AsyncGenerator, Generator, AsyncIterator, Iterator, NewT
 try:
     from PIL.Image import Image
 except ImportError:
-    from typing import Type as Image
+    class Image:
+        pass
 
 if sys.version_info >= (3, 8):
     from typing import TypedDict
 else:
     from typing_extensions import TypedDict
+    
+from .providers.response import ResponseType
 
 SHA256 = NewType('sha_256_hash', str)
-CreateResult = Iterator[str]
-AsyncResult = AsyncIterator[str]
-Messages = List[Dict[str, Union[str,List[Dict[str,Union[str,Dict[str,str]]]]]]]
+CreateResult = Iterator[Union[str, ResponseType]]
+AsyncResult = AsyncIterator[Union[str, ResponseType]]
+Messages = List[Dict[str, Union[str, List[Dict[str, Union[str, Dict[str, str]]]]]]]
 Cookies = Dict[str, str]
-ImageType = Union[str, bytes, IO, Image, None]
+ImageType = Union[str, bytes, IO, Image]
+ImagesType = List[Tuple[ImageType, Optional[str]]]
 
 __all__ = [
     'Any',
@@ -38,5 +42,6 @@ __all__ = [
     'Messages',
     'Cookies',
     'Image',
-    'ImageType'
+    'ImageType',
+    'ImagesType'
 ]
